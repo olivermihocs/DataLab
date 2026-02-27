@@ -1,0 +1,27 @@
+# Environment
+.env
+
+# Spark event logs (can get large)
+spark-events/
+
+# Local data files
+data/landing/*
+!data/landing/.gitkeep
+
+# Maven/Ivy JAR cache
+ivy-cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# OS
+.DS_Store
+Thumbs.db

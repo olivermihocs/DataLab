@@ -1,0 +1,170 @@
+services:
+
+  # ---------------------------------------------------------------------------
+  # MinIO — local S3-compatible object storage
+  # UI:  http://localhost:9001  (login: minioadmin / minioadmin)
+  # API: http://localhost:9000
+  # ---------------------------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: datalab-minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - datalab-net
+
+  # ---------------------------------------------------------------------------
+  # MinIO Init — one-shot container that creates buckets on first start
+  # ---------------------------------------------------------------------------
+  minio-init:
+    image: minio/mc:latest
+    container_name: datalab-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - ./scripts/init_minio.sh:/init_minio.sh:ro
+    entrypoint: ["/bin/sh", "/init_minio.sh"]
+    networks:
+      - datalab-net
+
+  # ---------------------------------------------------------------------------
+  # Spark Master
+  # UI: http://localhost:8080
+  # ---------------------------------------------------------------------------
+  spark-master:
+    image: bitnami/spark:3.5
+    container_name: datalab-spark-master
+    environment:
+      SPARK_MODE: master
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no"
+      SPARK_RPC_ENCRYPTION_ENABLED: "no"
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
+      SPARK_SSL_ENABLED: "no"
+      # MinIO credentials for S3A
+      SPARK_HADOOP_FS_S3A_ACCESS_KEY: ${MINIO_ROOT_USER}
+      SPARK_HADOOP_FS_S3A_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "8080:8080"   # Spark Master UI
+      - "7077:7077"   # Spark cluster RPC
+    volumes:
+      - ./spark/conf/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf:ro
+      - ./spark-events:/opt/spark/spark-events
+      - ivy-cache:/root/.ivy2
+    networks:
+      - datalab-net
+
+  # ---------------------------------------------------------------------------
+  # Spark Worker
+  # UI: http://localhost:8081
+  # ---------------------------------------------------------------------------
+  spark-worker-1:
+    image: bitnami/spark:3.5
+    container_name: datalab-spark-worker-1
+    depends_on:
+      - spark-master
+    environment:
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY:-2G}
+      SPARK_WORKER_CORES: ${SPARK_WORKER_CORES:-2}
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no"
+      SPARK_RPC_ENCRYPTION_ENABLED: "no"
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
+      SPARK_SSL_ENABLED: "no"
+      SPARK_HADOOP_FS_S3A_ACCESS_KEY: ${MINIO_ROOT_USER}
+      SPARK_HADOOP_FS_S3A_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "8081:8081"   # Worker UI
+    volumes:
+      - ./spark/conf/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf:ro
+      - ./spark-events:/opt/spark/spark-events
+      - ivy-cache:/root/.ivy2
+    networks:
+      - datalab-net
+
+  # ---------------------------------------------------------------------------
+  # Spark History Server — review completed job logs
+  # UI: http://localhost:18080
+  # ---------------------------------------------------------------------------
+  spark-history:
+    image: bitnami/spark:3.5
+    container_name: datalab-spark-history
+    depends_on:
+      - spark-master
+    environment:
+      SPARK_MODE: master              # kept to satisfy bitnami entrypoint
+      SPARK_HADOOP_FS_S3A_ACCESS_KEY: ${MINIO_ROOT_USER}
+      SPARK_HADOOP_FS_S3A_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+    command: >
+      /bin/bash -c "
+        /opt/bitnami/spark/bin/spark-class org.apache.spark.deploy.history.HistoryServer
+      "
+    ports:
+      - "18080:18080"
+    volumes:
+      - ./spark/conf/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf:ro
+      - ./spark-events:/opt/spark/spark-events
+      - ivy-cache:/root/.ivy2
+    networks:
+      - datalab-net
+
+  # ---------------------------------------------------------------------------
+  # JupyterLab — interactive notebooks with PySpark + Delta Lake
+  # URL: http://localhost:8888  (no token / password required)
+  # ---------------------------------------------------------------------------
+  jupyter:
+    build:
+      context: ./docker/jupyter
+      dockerfile: Dockerfile
+    container_name: datalab-jupyter
+    depends_on:
+      - spark-master
+      - minio-init
+    environment:
+      SPARK_MASTER: spark://spark-master:7077
+      SPARK_HADOOP_FS_S3A_ACCESS_KEY: ${MINIO_ROOT_USER}
+      SPARK_HADOOP_FS_S3A_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      # Expose MinIO endpoint to Python code
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "8888:8888"   # JupyterLab
+      - "4040:4040"   # Spark Application UI (when a job is running)
+    volumes:
+      - ./notebooks:/home/notebooks
+      - ./spark/conf/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf:ro
+      - ./spark-events:/opt/spark/spark-events
+      - ivy-cache:/root/.ivy2
+    networks:
+      - datalab-net
+
+# ---------------------------------------------------------------------------
+# Named volumes
+# ---------------------------------------------------------------------------
+volumes:
+  minio-data:          # MinIO data — persists across restarts
+  ivy-cache:           # Maven/Ivy JAR cache — avoids re-downloading Delta JARs
+
+# ---------------------------------------------------------------------------
+# Network
+# ---------------------------------------------------------------------------
+networks:
+  datalab-net:
+    driver: bridge
