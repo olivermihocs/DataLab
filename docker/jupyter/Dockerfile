@@ -1,4 +1,4 @@
-FROM bitnami/spark:3.5
+FROM public.ecr.aws/bitnami/spark:3.5.1
 
 USER root
 
