@@ -144,11 +144,13 @@ services:
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      ALPHAVANTAGE_API_KEY: ${ALPHAVANTAGE_API_KEY}
     ports:
       - "8888:8888"   # JupyterLab
       - "4040:4040"   # Spark Application UI (when a job is running)
     volumes:
       - ./notebooks:/home/notebooks
+      - ./data/landing:/home/landing
       - ./spark/conf/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf:ro
       - ./spark-events:/opt/spark/spark-events
       - ivy-cache:/root/.ivy2
