@@ -65,6 +65,7 @@ services:
     volumes:
       - ./spark/conf/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf:ro
       - ./spark-events:/opt/spark/spark-events
+      - ./data/landing:/home/landing
       - ivy-cache:/root/.ivy2
     networks:
       - datalab-net
@@ -94,6 +95,7 @@ services:
     volumes:
       - ./spark/conf/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf:ro
       - ./spark-events:/opt/spark/spark-events
+      - ./data/landing:/home/landing
       - ivy-cache:/root/.ivy2
     networks:
       - datalab-net
