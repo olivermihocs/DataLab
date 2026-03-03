@@ -10,7 +10,8 @@ RUN pip install --no-cache-dir \
     pandas==2.2.* \
     pyarrow==15.* \
     matplotlib==3.9.* \
-    seaborn==0.13.*
+    seaborn==0.13.* \
+    papermill==2.6.*
 
 # Create notebook directory
 RUN mkdir -p /home/notebooks && chmod -R 777 /home/notebooks
